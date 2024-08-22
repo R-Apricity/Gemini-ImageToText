@@ -1,9 +1,10 @@
-import { configDotenv } from 'dotenv'; configDotenv()
 import {
     GoogleGenerativeAI,
     HarmCategory,
     HarmBlockThreshold,
 } from '@google/generative-ai'
+
+import { configDotenv } from 'dotenv'; configDotenv()
 import { GoogleAIFileManager } from '@google/generative-ai/server'
 import { fileTypeFromBuffer } from 'file-type';
 import axios from 'axios';
@@ -11,14 +12,14 @@ import express from 'express'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import cors from 'cors'
 
 let tmpdir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'upload-'));
 
-const API_KEY = process.env.API_KEY || "AIzaSyBCU7KjcJYvXFhm8r_tclJj0TLMKzNSDHs"
+const API_KEY = process.env.API_KEY || ""
 
 const fileManager = new GoogleAIFileManager(API_KEY);
 const genAI = new GoogleGenerativeAI(API_KEY);
-
 
 const generationConfig = {
     temperature: 1,
@@ -48,35 +49,37 @@ const model = genAI.getGenerativeModel({
         {
             category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
             threshold: HarmBlockThreshold.BLOCK_NONE,
-        },
-        // {
-        //     category: HarmCategory.HARM_CATEGORY_UNSPECIFIED,
-        //     threshold: HarmBlockThreshold.BLOCK_NONE,
-        // }
+        }
     ], 
 })
 
 const app = express()
 
+app.use(cors())
 app.use(express.json())
+app.enable("trust proxy");
+app.use((req, res, next) => {
+    if (req.path != "/") {
+        morgan(':method :url :status - :remote-addr - params: :params - query: :query - body: :body')(req, res, next);
+    } else {
+        next();
+    }
+});
 
 app.all("/doreq", async (req, res) => {
     try {
         const { imgurl } = req.query;
-        if (!imgurl) {
-            return res.status(400).json({ error: "No input, " })
-        }
-        const randname = Math.random().toString(36).slice(2)
-
+        if (!imgurl) return res.status(400).json({ error: "No input, " })
+        
+        
         const imageresponse = await axios.get(imgurl, { responseType: "arraybuffer" })
         const ftype = await fileTypeFromBuffer(Buffer.from(imageresponse.data))
-
-        if (!ftype || !ftype.mime.startsWith('image/')) {
-            res.status(400).json({ error: "Not an image file\nReceived: " + ftype.mime })
-            return
-        }
-
+        
+        if (!ftype || !ftype.mime.startsWith('image/')) return res.status(400).json({ error: "Not an image file\nReceived: " + ftype.mime })
+        
+        const randname = Math.random().toString(36).slice(2)
         const fpath = `${tmpdir}/${randname}`
+
         await fs.promises.writeFile(fpath, imageresponse.data)
 
         const uploadResult = await fileManager.uploadFile(
@@ -88,7 +91,7 @@ app.all("/doreq", async (req, res) => {
 
         await fs.promises.rm(fpath)
 
-        const result = await model.sendMessage([
+        const result = await model.generateContent([
             "",
             {
                 fileData: {
@@ -98,7 +101,6 @@ app.all("/doreq", async (req, res) => {
             },
         ],
         );
-        console.log(await result.response.text())
         res.json({repsonse: result.response.text()})
     } catch (e) {
         console.log(e)
@@ -108,14 +110,11 @@ app.all("/doreq", async (req, res) => {
 
 app.all("/", (req, res) => res.send("Hello World!"))
 
+morgan.token('params', (req) => JSON.stringify(req.params));
+morgan.token('query', (req) => JSON.stringify(req.query));
+morgan.token('body', (req) => JSON.stringify(req.body));
+
 const PORT = process.env.PORT || 2500
 app.listen(PORT, async function () {
-    // const dirExists = await fs.promises.access(tmpdir).then(() => true).catch(() => false);
-
-    // if (dirExists) {
-    //     // Remove the directory and all its contents
-    //     await fs.promises.rm(tmpdir, { recursive: true, force: true });
-    //     tmpdir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'upload-'));
-    // }
     console.log("LISTEN PORT: " + 2500)
 })
