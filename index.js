@@ -8,12 +8,12 @@ import { configDotenv } from 'dotenv'; configDotenv()
 import { GoogleAIFileManager } from '@google/generative-ai/server'
 import { fileTypeFromBuffer } from 'file-type';
 import axios from 'axios';
+import cors from 'cors'
 import express from 'express'
 import fs from 'fs'
+import morgan from 'morgan';
 import os from 'os'
 import path from 'path'
-import cors from 'cors'
-
 let tmpdir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'upload-'));
 
 const API_KEY = process.env.API_KEY || ""
